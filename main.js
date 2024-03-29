@@ -1,10 +1,19 @@
-/*jshint esversion:6*/
-
 $(function () {
     const video = $("video")[0];
+    const sidebar = $("<div/>").addClass("sidebar").appendTo("body");
+    const leftSidebar = $("<div/>").addClass("left-sidebar").appendTo(sidebar);
+    const rightSidebar = $("<div/>").addClass("right-sidebar").appendTo(sidebar);
+
+    const currentTable = $("<table/>").addClass("table").appendTo(leftSidebar);
+    const historicalTable = $("<table/>").addClass("historical-data-table").appendTo(rightSidebar);
+
+    const historicalData = []; // Array to store historical data
 
     var model;
     var cameraMode = "environment"; // or "user"
+    var detectedColors = {}; // Object to store detected colors and their counts
+    var countedObjects = {}; // Object to track counted objects in the current frame
+    var isDetectionRunning = true; // Flag to track if detection is running
 
     const startVideoStreamPromise = navigator.mediaDevices
         .getUserMedia({
@@ -51,7 +60,7 @@ $(function () {
     const font = "16px sans-serif";
 
     function videoDimensions(video) {
-        // Ratio of the video's intrisic dimensions
+        // Ratio of the video's intrinsic dimensions
         var videoRatio = video.videoWidth / video.videoHeight;
 
         // The width and height of the video element
@@ -88,14 +97,6 @@ $(function () {
 
         var dimensions = videoDimensions(video);
 
-        console.log(
-            video.videoWidth,
-            video.videoHeight,
-            video.offsetWidth,
-            video.offsetHeight,
-            dimensions
-        );
-
         canvas[0].width = video.videoWidth;
         canvas[0].height = video.videoHeight;
 
@@ -116,12 +117,23 @@ $(function () {
 
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
+        detectedColors = {}; // Reset detected colors for each frame
+
         predictions.forEach(function (prediction) {
             const x = prediction.bbox.x;
             const y = prediction.bbox.y;
 
             const width = prediction.bbox.width;
             const height = prediction.bbox.height;
+
+            const color = prediction.class; // Get the detected color
+
+            // Increment count for this color
+            if (!detectedColors[color]) {
+                detectedColors[color] = 1;
+            } else {
+                detectedColors[color]++;
+            }
 
             // Draw the bounding box.
             ctx.strokeStyle = prediction.color;
@@ -145,6 +157,9 @@ $(function () {
             );
         });
 
+        // Update the count in the sidebar
+        updateSidebarCount();
+
         predictions.forEach(function (prediction) {
             const x = prediction.bbox.x;
             const y = prediction.bbox.y;
@@ -164,34 +179,148 @@ $(function () {
         });
     };
 
-    var prevTime;
-    var pastFrameTimes = [];
+    const updateSidebarCount = function () {
+        const flowerCounts = {
+            'dark pink': 0,
+            'gerbera': 0,
+            'not grown': 0,
+            'orange': 0,
+            'pink': 0,
+            'red': 0,
+            'salmon': 0,
+            'white': 0,
+            'yellow': 0
+        };
+    
+        // Update counts only for newly detected objects
+        Object.keys(detectedColors).forEach(color => {
+            if (detectedColors[color] > (countedObjects[color] || 0)) {
+                flowerCounts[color] = detectedColors[color] - (countedObjects[color] || 0);
+                countedObjects[color] = detectedColors[color];
+            }
+        });
+    
+        // Update the sidebar with the latest counts
+        updateSidebar(flowerCounts);
+    
+        // Save historical data
+        const timestamp = new Date().toLocaleString();
+        historicalData.push({ timestamp, counts: { ...flowerCounts } });
+    
+        // Display historical data in the right sidebar
+        displayHistoricalData();
+    };
+    
+
+    const updateSidebar = function (flowerCounts) {
+        currentTable.empty(); // Clear previous counts
+
+        const headerRow = $("<tr/>");
+        $("<th/>").text("Color").appendTo(headerRow);
+        $("<th/>").text("Count").appendTo(headerRow);
+        currentTable.append(headerRow);
+
+        for (const [color, count] of Object.entries(flowerCounts)) {
+            const row = $("<tr/>");
+            $("<td/>").text(color).appendTo(row);
+            $("<td/>").text(count).appendTo(row);
+            currentTable.append(row);
+        }
+    };
+
+    const displayHistoricalData = function () {
+        historicalTable.empty(); // Clear previous historical data
+    
+        const headerRow = $("<tr/>");
+        $("<th/>").text("Timestamp").appendTo(headerRow);
+        $("<th/>").text("Color").appendTo(headerRow);
+        $("<th/>").text("Count").appendTo(headerRow);
+        historicalTable.append(headerRow);
+    
+        const colorsToDisplay = ['dark pink', 'gerbera', 'not grown', 'orange', 'pink', 'red', 'salmon', 'white', 'yellow'];
+    
+        const historicalCounts = {}; // Object to store historical counts for specified colors
+        let totalCount = 0; // Variable to store total count
+    
+        historicalData.forEach((record) => {
+            const timestamp = record.timestamp;
+            const counts = record.counts;
+    
+            for (const color of colorsToDisplay) {
+                if (!(color in historicalCounts)) {
+                    historicalCounts[color] = 0;
+                }
+    
+                historicalCounts[color] += counts[color] || 0;
+                totalCount += counts[color] || 0;
+            }
+        });
+    
+        colorsToDisplay.forEach((color) => {
+            const row = $("<tr/>");
+            $("<td/>").text("Total").appendTo(row);
+            $("<td/>").text(color).appendTo(row);
+            $("<td/>").text(historicalCounts[color] || 0).appendTo(row); // Display count for specified color
+            historicalTable.append(row);
+        });
+    
+        // Add total count row at the end
+        const totalRow = $("<tr/>");
+        $("<td/>").text("Total").appendTo(totalRow);
+        $("<td/>").text("All Colors").appendTo(totalRow);
+        $("<td/>").text(totalCount).appendTo(totalRow);
+        historicalTable.append(totalRow);
+    };
+    
+
+    const generateExcelFile = function () {
+        let csv = "Timestamp,Color,Count\n";
+
+        historicalData.forEach((record) => {
+            const timestamp = record.timestamp;
+            const counts = record.counts;
+
+            Object.entries(counts).forEach(([color, count]) => {
+                csv += `${timestamp},${color},${count}\n`;
+            });
+        });
+
+        const csvContent = "data:text/csv;charset=utf-8," + csv;
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "flower_counts_history.csv");
+        document.body.appendChild(link);
+        link.click();
+    };
+
     const detectFrame = function () {
         if (!model) return requestAnimationFrame(detectFrame);
 
         model
             .detect(video)
             .then(function (predictions) {
-                requestAnimationFrame(detectFrame);
-                renderPredictions(predictions);
-
-                if (prevTime) {
-                    pastFrameTimes.push(Date.now() - prevTime);
-                    if (pastFrameTimes.length > 30) pastFrameTimes.shift();
-
-                    var total = 0;
-                    _.each(pastFrameTimes, function (t) {
-                        total += t / 1000;
-                    });
-
-                    var fps = pastFrameTimes.length / total;
-                    $("#fps").text(Math.round(fps));
+                if (isDetectionRunning) {
+                    requestAnimationFrame(detectFrame);
+                    renderPredictions(predictions);
                 }
-                prevTime = Date.now();
             })
             .catch(function (e) {
-                console.log("CAUGHT", e);
-                requestAnimationFrame(detectFrame);
+                console.log("Error detecting frame:", e);
+                if (isDetectionRunning) {
+                    requestAnimationFrame(detectFrame);
+                }
             });
     };
+
+    $("#downloadReport").click(function () {
+        generateExcelFile();
+    });
+
+    $("#cancelDetection").click(function () {
+        console.log("Detection canceled.");
+        isDetectionRunning = false;
+        // Additional actions for canceling detection can be added here
+    });
+    
 });
