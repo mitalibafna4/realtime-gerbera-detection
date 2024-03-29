@@ -37,29 +37,42 @@ video, canvas {
     left: 0;
 }
 
-body:after {
-    content: "";
+.grey-sidebar {
+    background-color: #333;
+    color: white;
+    width: 250px;
+    margin-top: 10%;
     position: fixed;
-    bottom: 20px;
-    right: 20px;
-    width: 350px;
-    height: 150px;
-    z-index: 1;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: bottom right;
+    left: 0;
+    top: 0;
+    overflow-y: auto;
+    padding: 20px;
 }
 
-#fps {
-    position: fixed;
-    bottom: 10px;
-    left: 10px;
+.table {
+    width: 100%;
+    color: white;
 }
 
-#fps:empty {
-    display: none;
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid white;
 }
 
-#fps:after {
-    content: " fps";
+th {
+    background-color: #555;
+}
+
+.buttons {
+    margin-top: 20px;
+}
+
+#downloadReport, #cancelDetection {
+    display: block;
+    margin-bottom: 10px;
+}
+
+#totalCount {
+    margin-top: 10px;
+    font-weight: bold;
 }
